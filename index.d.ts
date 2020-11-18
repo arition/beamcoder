@@ -10,6 +10,7 @@ export * from "./types/Filter"
 export * from "./types/Encoder"
 export * from "./types/Muxer"
 export * from "./types/Beamstreams"
+export * from "./types/HWContext"
 
 export const AV_NOPTS_VALUE: number
 
@@ -65,5 +66,18 @@ export function licenses(): {
 }
 /** List the available protocols */
 export function protocols(): { inputs: Array<string>, outputs: Array<string> }
+
+/** Read or set the logging level
+ * `quiet` - print no output.
+ * `panic` - something went really wrong - crash will follow
+ * `fatal` - recovery not possible
+ * `error` - lossless recovery not possible
+ * `warning` - something doesn't look correct
+ * `info` - standard information - the default
+ * `verbose` - detailed information
+ * `debug` - stuff which is only useful for libav* developers
+ * `trace` - extremely verbose debugging for libav* developers
+ */
+export function logging(level?: string): string | undefined
 
 export as namespace Beamcoder

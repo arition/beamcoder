@@ -52,6 +52,8 @@ napi_value seekFrame(napi_env env, napi_callback_info info);
 void demuxerFinalizer(napi_env env, void* data, void* hint);
 void readBufferFinalizer(napi_env env, void* data, void* hint);
 
+napi_value forceCloseInput(napi_env env, napi_callback_info info);
+
 struct demuxerCarrier : carrier {
   const char* filename = nullptr;
   Adaptor *adaptor = nullptr;
@@ -65,7 +67,7 @@ struct demuxerCarrier : carrier {
 };
 
 struct readFrameCarrier : carrier {
-  AVFormatContext* format = nullptr;
+  fmtCtxRef* formatRef = nullptr;
   Adaptor *adaptor = nullptr;
   AVPacket* packet = av_packet_alloc();
   ~readFrameCarrier() {
@@ -74,7 +76,7 @@ struct readFrameCarrier : carrier {
 };
 
 struct seekFrameCarrier : carrier {
-  AVFormatContext* format = nullptr;
+  fmtCtxRef* formatRef = nullptr;
   int streamIndex = -1;
   int64_t timestamp = 0;
   // weird semantic - backward actually means 'find nearest key frame before timestamp'

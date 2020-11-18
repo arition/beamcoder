@@ -3494,7 +3494,9 @@ napi_value formatToJSON(napi_env env, napi_callback_info info) {
 napi_status fromAVFormatContext(napi_env env, AVFormatContext* fmtCtx,
     Adaptor *adaptor, napi_value* result) {
   napi_status status;
-  napi_value jsFmtCtx, extFmtCtx, extAdaptor, truth, undef;
+  napi_value jsFmtCtx, extFmtCtxRef, extFmtCtx, extAdaptor, truth, undef;
+  fmtCtxRef* fmtRef = new fmtCtxRef;
+  fmtRef->fmtCtx = fmtCtx;
 
   bool isMuxer = fmtCtx->oformat != nullptr;
   bool isFormat = !((fmtCtx->oformat == nullptr) ^ (fmtCtx->iformat == nullptr));
@@ -3505,7 +3507,9 @@ napi_status fromAVFormatContext(napi_env env, AVFormatContext* fmtCtx,
   PASS_STATUS;
   status = napi_get_undefined(env, &undef);
   PASS_STATUS;
-  status = napi_create_external(env, fmtCtx, formatContextFinalizer, adaptor, &extFmtCtx);
+  status = napi_create_external(env, fmtRef, formatContextFinalizer, adaptor, &extFmtCtxRef);
+  PASS_STATUS;
+  status = napi_create_external(env, fmtCtx, nullptr, adaptor, &extFmtCtx);
   PASS_STATUS;
   status = napi_create_external(env, adaptor, nullptr, nullptr, &extAdaptor);
   PASS_STATUS;
@@ -3686,11 +3690,12 @@ napi_status fromAVFormatContext(napi_env env, AVFormatContext* fmtCtx,
       { "newStream", nullptr, newStream, nullptr, nullptr, nullptr,
         napi_enumerable, fmtCtx },
       { "toJSON", nullptr, formatToJSON, nullptr, nullptr, nullptr, napi_default, fmtCtx },
+      { "_formatContextRef", nullptr, nullptr, nullptr, nullptr, extFmtCtxRef, napi_default, nullptr },
       { "_formatContext", nullptr, nullptr, nullptr, nullptr, extFmtCtx, napi_default, nullptr },
       { "_adaptor", nullptr, nullptr, nullptr, nullptr, extAdaptor, napi_default, nullptr },
       { "__streams", nullptr, nullptr, nullptr, nullptr, undef, napi_writable, nullptr }
     };
-    status = napi_define_properties(env, jsFmtCtx, 56, desc);
+    status = napi_define_properties(env, jsFmtCtx, 57, desc);
     PASS_STATUS;
   } else {
     napi_property_descriptor desc[] = {
@@ -3810,11 +3815,12 @@ napi_status fromAVFormatContext(napi_env env, AVFormatContext* fmtCtx,
       { "newStream", nullptr, newStream, nullptr, nullptr, nullptr,
         napi_enumerable, fmtCtx },
       { "toJSON", nullptr, formatToJSON, nullptr, nullptr, nullptr, napi_default, fmtCtx },
+      { "_formatContextRef", nullptr, nullptr, nullptr, nullptr, extFmtCtxRef, napi_default, nullptr },
       { "_formatContext", nullptr, nullptr, nullptr, nullptr, extFmtCtx, napi_default, nullptr },
       { "_adaptor", nullptr, nullptr, nullptr, nullptr, extAdaptor, napi_default, nullptr },
       { "__streams", nullptr, nullptr, nullptr, nullptr, undef, napi_writable, nullptr }
     };
-    status = napi_define_properties(env, jsFmtCtx, 57, desc);
+    status = napi_define_properties(env, jsFmtCtx, 58, desc);
     PASS_STATUS;
   }
 
@@ -3823,35 +3829,48 @@ napi_status fromAVFormatContext(napi_env env, AVFormatContext* fmtCtx,
 }
 
 void formatContextFinalizer(napi_env env, void* data, void* hint) {
-  AVFormatContext* fc = (AVFormatContext*) data;
+  fmtCtxRef* fmtRef = (fmtCtxRef*) data;
+  AVFormatContext* fc;
   Adaptor *adaptor = (Adaptor *)hint;
   int ret;
-  if (fc->pb != nullptr) {
-    if (adaptor)
-      avio_context_free(&fc->pb);
-    else {
-      ret = avio_closep(&fc->pb);
-      if (ret < 0) {
-        printf("DEBUG: For url '%s', %s", (fc->url != nullptr) ? fc->url : "unknown",
-          avErrorMsg("error closing IO: ", ret));
+
+  if (fmtRef->fmtCtx != nullptr) {
+    fc = fmtRef->fmtCtx;
+    if (fc->pb != nullptr) {
+      if (adaptor)
+        avio_context_free(&fc->pb);
+      else {
+        ret = avio_closep(&fc->pb);
+        if (ret < 0) {
+          printf("DEBUG: For url '%s', %s", (fc->url != nullptr) ? fc->url : "unknown",
+            avErrorMsg("error closing IO: ", ret));
+        }
       }
     }
+
+    if (fc->iformat != nullptr) {
+      avformat_close_input(&fc);
+    } else {
+      // FIXME this is segfaulting ... why
+      /* if (fc->codec_whitelist != nullptr) {
+        av_freep(fc->codec_whitelist);
+      }
+      if (fc->format_whitelist != nullptr) {
+        av_freep(fc->format_whitelist);
+      }
+      if (fc->protocol_whitelist != nullptr) {
+        av_freep(fc->protocol_whitelist);
+      }
+      if (fc->protocol_blacklist != nullptr) {
+        av_freep(fc->protocol_blacklist);
+      } */
+    }
+
+    if (adaptor != nullptr) // crashes otherwise...
+      avformat_free_context(fc);
   }
-  // FIXME this is segfaulting ... why
-  /* if (fc->codec_whitelist != nullptr) {
-    av_freep(fc->codec_whitelist);
-  }
-  if (fc->format_whitelist != nullptr) {
-    av_freep(fc->format_whitelist);
-  }
-  if (fc->protocol_whitelist != nullptr) {
-    av_freep(fc->protocol_whitelist);
-  }
-  if (fc->protocol_blacklist != nullptr) {
-    av_freep(fc->protocol_blacklist);
-  } */
-  if (!adaptor) // crashes otherwise...
-    avformat_free_context(fc);
+
+  delete fmtRef;
 }
 
 napi_value newStream(napi_env env, napi_callback_info info) {
